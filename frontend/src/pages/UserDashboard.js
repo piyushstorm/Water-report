@@ -78,63 +78,21 @@ export default function UserDashboard() {
     }
   };
 
-// Improved handleDownloadReport function with better error handling and debugging
-
+// Fixed handleDownloadReport function using proper reportAPI service
 const handleDownloadReport = async (type, format) => {
   try {
-    const token = localStorage.getItem("access");
+    toast.info(`Generating ${format.toUpperCase()} report...`);
     
-    if (!token) {
-      toast.error("Authentication token not found. Please log in again.");
-      return;
-    }
-
-    const url = `http://127.0.0.1:8000/api/reports/generate?report_type=${type}&format=${format}`;
+    const response = await reportAPI.generate(type, format);
     
-    console.log('📡 Requesting:', url);
-    console.log('🔑 Token present:', !!token);
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    console.log('📊 Response status:', response.status);
-    console.log('📋 Response headers:', [...response.headers.entries()]);
-
-    if (!response.ok) {
-      const contentType = response.headers.get("content-type");
-      let errorMessage = `Download failed with status ${response.status}`;
-      
-      if (contentType && contentType.includes("application/json")) {
-        const errorData = await response.json();
-        console.error('❌ JSON Error:', errorData);
-        errorMessage = errorData.error || errorData.detail || errorMessage;
-      } else {
-        const errorText = await response.text();
-        console.error('❌ Text Error:', errorText);
-        errorMessage = errorText || errorMessage;
-      }
-      
-      throw new Error(errorMessage);
-    }
-
-    // Check content type
-    const contentType = response.headers.get("content-type");
-    console.log('📄 Content type:', contentType);
-
-    const blob = await response.blob();
-    console.log('📦 Blob size:', blob.size, 'bytes');
+    // response.data is already a blob due to responseType: 'blob' in api.js
+    const blob = response.data;
     
     if (blob.size === 0) {
       throw new Error("Received empty file from server");
     }
 
     const downloadUrl = window.URL.createObjectURL(blob);
-
     const link = document.createElement("a");
     link.href = downloadUrl;
     link.download = `water_usage_${type}.${format}`;
@@ -146,10 +104,21 @@ const handleDownloadReport = async (type, format) => {
     setTimeout(() => window.URL.revokeObjectURL(downloadUrl), 100);
 
     toast.success(`${format.toUpperCase()} report downloaded successfully!`);
-    console.log('✅ Download completed successfully');
   } catch (error) {
-    console.error('❌ Download error:', error);
-    toast.error(`Failed to generate report: ${error.message}`);
+    console.error('Download error:', error);
+    
+    // Handle blob error responses
+    if (error.response?.data instanceof Blob) {
+      try {
+        const errorText = await error.response.data.text();
+        const errorJson = JSON.parse(errorText);
+        toast.error(errorJson.error || 'Failed to generate report');
+      } catch {
+        toast.error('Failed to generate report');
+      }
+    } else {
+      toast.error(error.response?.data?.error || error.message || 'Failed to generate report');
+    }
   }
 };
 
